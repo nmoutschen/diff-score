@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [".", "diff-score-derive", "test-diff-score"]
+
+[package]
+name = "diff-score"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+diff-score-derive = { path = "./diff-score-derive" }
