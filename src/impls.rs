@@ -12,6 +12,14 @@ macro_rules! impl_eq {
 
 impl_eq!(bool);
 impl_eq!(char);
+impl_eq!(f32);
+impl_eq!(f64);
+impl_eq!(i128);
+impl_eq!(i16);
+impl_eq!(i32);
+impl_eq!(i64);
+impl_eq!(i8);
+impl_eq!(isize);
 impl_eq!(std::ffi::OsStr);
 impl_eq!(std::ffi::OsString);
 impl_eq!(std::net::IpAddr);
@@ -22,35 +30,14 @@ impl_eq!(std::path::PathBuf);
 impl_eq!(std::time::Duration);
 impl_eq!(std::time::Instant);
 impl_eq!(std::time::SystemTime);
-
-macro_rules! impl_num {
-    ($type:ty) => {
-        impl DiffScore for $type {
-            fn diff_score(&self, other: &Self) -> f64 {
-                (*self as f64 - *other as f64).abs()
-            }
-
-            fn missing_score(&self) -> f64 {
-                (*self as f64).abs()
-            }
-        }
-    };
-}
-
-impl_num!(u8);
-impl_num!(u16);
-impl_num!(u32);
-impl_num!(u64);
-impl_num!(u128);
-impl_num!(usize);
-impl_num!(i8);
-impl_num!(i16);
-impl_num!(i32);
-impl_num!(i64);
-impl_num!(i128);
-impl_num!(isize);
-impl_num!(f32);
-impl_num!(f64);
+impl_eq!(str);
+impl_eq!(String);
+impl_eq!(u128);
+impl_eq!(u16);
+impl_eq!(u32);
+impl_eq!(u64);
+impl_eq!(u8);
+impl_eq!(usize);
 
 impl<T> DiffScore for Option<T>
 where
@@ -59,7 +46,21 @@ where
     fn diff_score(&self, other: &Self) -> f64 {
         match (self, other) {
             (Some(self_val), Some(other_val)) => self_val.diff_score(other_val),
-            (Some(val), _) | (_, Some(val)) => val.missing_score(),
+            (None, None) => 0.0,
+            (_, _) => 1.0,
+        }
+    }
+}
+
+impl<T, E> DiffScore for Result<T, E>
+where
+    T: DiffScore,
+    E: DiffScore,
+{
+    fn diff_score(&self, other: &Self) -> f64 {
+        match (self, other) {
+            (Ok(self_val), Ok(other_val)) => self_val.diff_score(other_val),
+            (Err(self_err), Err(other_err)) => self_err.diff_score(other_err),
             (_, _) => 1.0,
         }
     }

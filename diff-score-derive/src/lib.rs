@@ -4,7 +4,7 @@ use darling::{
 };
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
-use syn::{DeriveInput, Ident, parse_macro_input};
+use syn::{DeriveInput, Ident, Path, parse_macro_input};
 
 const DEFAULT_WEIGHT: f64 = 1.0;
 
@@ -12,10 +12,45 @@ const DEFAULT_WEIGHT: f64 = 1.0;
 #[darling(attributes(diff_score))]
 struct FieldOpts {
     ident: Option<Ident>,
+    /// Provide a weight for the field
     #[darling(default)]
     weight: Option<f64>,
+    /// Provide a custom function to compute the score
     #[darling(default)]
-    use_eq: bool,
+    with: Option<Path>,
+    #[darling(default)]
+    skip: bool,
+}
+
+impl FieldOpts {
+    fn weight(&self) -> f64 {
+        if self.skip {
+            0.0
+        } else {
+            self.weight.unwrap_or(DEFAULT_WEIGHT)
+        }
+    }
+
+    fn as_expr(&self, a: &TokenStream, b: &TokenStream) -> TokenStream {
+        let weight = self.weight();
+        if self.skip {
+            return quote! {};
+        }
+
+        match self.with.as_ref() {
+            // Some(Path) => quote! {
+            //     score += if #a == #b { 0.0 } else { #weight }
+            // },
+            Some(f) => {
+                quote! {
+                    score += #weight * #f(&#a, &#b);
+                }
+            }
+            None => quote! {
+                score += #weight * #a.diff_score(&#b);
+            },
+        }
+    }
 }
 
 #[derive(Debug, FromVariant)]
@@ -30,22 +65,14 @@ struct VariantOpts {
 struct DiffScoreReceiver {
     ident: Ident,
     data: ast::Data<VariantOpts, FieldOpts>,
-
-    #[darling(default)]
-    default_penalty: Option<f64>,
 }
 
 impl ToTokens for DiffScoreReceiver {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let DiffScoreReceiver {
-            ident,
-            data,
-            default_penalty,
-        } = self;
+        let DiffScoreReceiver { ident, data } = self;
 
         *tokens = match data {
             ast::Data::Enum(variants) => {
-                let default_penalty = default_penalty.unwrap_or(DEFAULT_WEIGHT);
                 let score_exprs: Vec<_> = variants
                     .iter()
                     .map(|variant| {
@@ -56,19 +83,14 @@ impl ToTokens for DiffScoreReceiver {
                                 let mut other_fields = Vec::new();
                                 let mut exprs = Vec::new();
 
+                                let mut total_weight = 0.0;
+
                                 for (num, field) in variant.fields.iter().enumerate() {
                                     let self_ident = format_ident!("sf{num}");
                                     let other_ident = format_ident!("of{num}");
-                                    let weight = field.weight.unwrap_or(DEFAULT_WEIGHT);
-                                    exprs.push(if field.use_eq {
-                                        quote! {
-                                            score += #weight * if #self_ident != #other_ident { 1.0 } else { 0.0 }
-                                        }
-                                    } else {
-                                        quote! {
-                                            score += #weight * #self_ident.diff_score(&#other_ident)
-                                        }
-                                    });
+                                    let weight = field.weight();
+                                    total_weight += weight;
+                                    exprs.push(field.as_expr(&quote!{#self_ident}, &quote!{#other_ident}));
                                     self_fields.push(self_ident);
                                     other_fields.push(other_ident);
                                 }
@@ -76,8 +98,8 @@ impl ToTokens for DiffScoreReceiver {
                                 quote! {
                                     (#ident::#variant_ident(#(#self_fields,)*), #ident::#variant_ident(#(#other_fields,)*)) => {
                                         let mut score = 0.0;
-                                        #(#exprs;)*
-                                        score
+                                        #(#exprs)*
+                                        score / #total_weight
                                     }
                                 }
                             }
@@ -85,31 +107,25 @@ impl ToTokens for DiffScoreReceiver {
                                 let mut self_fields = Vec::new();
                                 let mut other_fields = Vec::new();
                                 let mut exprs = Vec::new();
+                                let mut total_weight = 0.0;
 
                                 for  field in variant.fields.iter() {
-                                    let field_ident = field.ident.as_ref().unwrap();
-                                    let other_ident = format_ident!("other_{field_ident}");
+                                    let self_ident = field.ident.as_ref().unwrap();
+                                    let other_ident = format_ident!("other_{self_ident}");
 
-                                    self_fields.push(field_ident);
-                                    other_fields.push(quote! { #field_ident: #other_ident });
+                                    self_fields.push(self_ident);
+                                    other_fields.push(quote! { #self_ident: #other_ident });
 
-                                    let weight = field.weight.unwrap_or(DEFAULT_WEIGHT);
-                                    exprs.push(if field.use_eq {
-                                        quote! {
-                                            score += #weight * if #field_ident != #other_ident { 1.0 } else { 0.0 }
-                                        }
-                                    } else {
-                                        quote! {
-                                            score += #weight * #field_ident.diff_score(&#other_ident)
-                                        }
-                                    });
+                                    let weight = field.weight();
+                                    total_weight += weight;
+                                    exprs.push(field.as_expr(&quote!{#self_ident}, &quote!{#other_ident}));
                                 }
 
                                 quote! {
                                     (#ident::#variant_ident { #(#self_fields,)* }, #ident::#variant_ident { #(#other_fields,)* }) => {
                                         let mut score = 0.0;
-                                        #(#exprs;)*
-                                        score
+                                        #(#exprs)*
+                                        score / #total_weight
                                     }
                                 }
                             },
@@ -125,36 +141,31 @@ impl ToTokens for DiffScoreReceiver {
                         fn diff_score(&self, other: &Self) -> f64 {
                             match (self, other) {
                                 #(#score_exprs,)*
-                                (_, _) => #default_penalty,
+                                (_, _) => #DEFAULT_WEIGHT,
                             }
                         }
                     }
                 }
             }
             ast::Data::Struct(fields) => {
+                let mut total_weight = 0.0;
                 let score_exprs: Vec<_> = fields
                     .iter()
                     .map(|field| {
                         let field_ident = field.ident.as_ref().unwrap();
-                        let weight = field.weight.unwrap_or(DEFAULT_WEIGHT);
+                        let self_ident = quote! { self.#field_ident };
+                        let other_ident = quote! { other.#field_ident };
+                        total_weight += field.weight();
 
-                        if field.use_eq {
-                            quote! {
-                                score += #weight * if self.#field_ident != other.#field_ident { 1.0 } else { 0.0 }
-                            }
-                        } else {
-                            quote! {
-                                score += #weight * self.#field_ident.diff_score(&other.#field_ident)
-                            }
-                        }
+                        field.as_expr(&self_ident, &other_ident)
                     })
                     .collect();
                 quote! {
                     impl ::diff_score::DiffScore for #ident {
                         fn diff_score(&self, other: &Self) -> f64 {
                             let mut score = 0.0;
-                            #(#score_exprs;)*
-                            score
+                            #(#score_exprs)*
+                            score / #total_weight
                         }
                     }
                 }
