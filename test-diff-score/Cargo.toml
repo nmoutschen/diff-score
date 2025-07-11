@@ -3,6 +3,6 @@ name = "test-diff-score"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[dev-dependencies]
 diff-score = { path = ".." }
-rstest = "0.25.0"
+rstest.workspace = true

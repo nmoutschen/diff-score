@@ -47,7 +47,7 @@ impl FieldOpts {
                 }
             }
             None => quote! {
-                score += #weight * #a.diff_score(&#b);
+                score += #weight * ::diff_score::DiffScore::diff_score(&#a, &#b);
             },
         }
     }

@@ -2,15 +2,16 @@
 resolver = "2"
 members = [".", "diff-score-derive", "test-diff-score"]
 
+[workspace.dependencies]
+rstest = "0.25.0"
+
 [package]
 name = "diff-score"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-default = ["serde_json"]
-serde_json = ["dep:serde_json"]
-
 [dependencies]
 diff-score-derive = { path = "./diff-score-derive" }
-serde_json = { version = "1.0.140", optional = true }
+
+[dev-dependencies]
+rstest.workspace = true

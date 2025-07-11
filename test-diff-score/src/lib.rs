@@ -43,29 +43,6 @@ mod tests {
     }
 
     #[derive(DiffScore)]
-    struct MyStructSkip {
-        num: usize,
-        #[diff_score(weight = 3.0, skip)]
-        #[allow(unused)]
-        string: &'static str,
-    }
-
-    #[rstest::rstest]
-    #[case(MyStructSkip { num: 3, string: "hello" }, MyStructSkip { num: 3, string: "hello" }, 0.0)]
-    #[case(MyStructSkip { num: 3, string: "hello" }, MyStructSkip { num: 4, string: "hello" }, 1.0)]
-    #[case(MyStructSkip { num: 3, string: "hello" }, MyStructSkip { num: 7, string: "hello" }, 1.0)]
-    #[case(MyStructSkip { num: 3, string: "hello" }, MyStructSkip { num: 3, string: "hello world!" }, 0.0)]
-    #[case(MyStructSkip { num: 3, string: "hello" }, MyStructSkip { num: 4, string: "hello world!" }, 1.0)]
-    fn test_diff_struct_skip(
-        #[case] a: MyStructSkip,
-        #[case] b: MyStructSkip,
-        #[case] expected: f64,
-    ) {
-        assert_eq!(a.diff_score(&b), expected);
-        assert_eq!(b.diff_score(&a), expected);
-    }
-
-    #[derive(DiffScore)]
     enum MyEnum {
         Unit,
         Tuple(f64, #[diff_score(weight = 3.0)] &'static str),
@@ -98,5 +75,48 @@ mod tests {
 
     fn my_diff_fn(_: &str, _: &str) -> f64 {
         0.5
+    }
+
+    struct NotDiffable;
+
+    #[derive(DiffScore)]
+    struct MyStructSkip {
+        num: usize,
+        #[diff_score(weight = 3.0, skip)]
+        #[allow(unused)]
+        skipped: NotDiffable,
+    }
+
+    #[rstest::rstest]
+    #[case(MyStructSkip { num: 3, skipped: NotDiffable }, MyStructSkip { num: 3, skipped: NotDiffable }, 0.0)]
+    #[case(MyStructSkip { num: 3, skipped: NotDiffable }, MyStructSkip { num: 4, skipped: NotDiffable }, 1.0)]
+    #[case(MyStructSkip { num: 3, skipped: NotDiffable }, MyStructSkip { num: 7, skipped: NotDiffable }, 1.0)]
+    fn test_diff_struct_skip(
+        #[case] a: MyStructSkip,
+        #[case] b: MyStructSkip,
+        #[case] expected: f64,
+    ) {
+        assert_eq!(a.diff_score(&b), expected);
+        assert_eq!(b.diff_score(&a), expected);
+    }
+
+    #[derive(DiffScore)]
+    struct MyStructSet {
+        num: usize,
+        #[diff_score(with = "diff_score::with::set")]
+        set: Vec<&'static str>,
+    }
+
+    #[rstest::rstest]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 3, set: vec!["a"] }, 0.0)]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 4, set: vec!["a"] }, 0.5)]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 7, set: vec!["a"] }, 0.5)]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 3, set: vec!["a", "b"] }, 0.25)]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 4, set: vec!["a", "b"] }, 0.75)]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 3, set: vec!["b"] }, 0.5)]
+    #[case(MyStructSet { num: 3, set: vec!["a"] }, MyStructSet { num: 4, set: vec!["b"] }, 1.0)]
+    fn test_diff_struct_set(#[case] a: MyStructSet, #[case] b: MyStructSet, #[case] expected: f64) {
+        assert_eq!(a.diff_score(&b), expected);
+        assert_eq!(b.diff_score(&a), expected);
     }
 }
